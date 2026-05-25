@@ -1,0 +1,565 @@
+{% assign show_error = error %}
+{% if show_error == blank %}
+  {% if player_name == blank and profile.personaname %}
+    {% assign player_name = profile.personaname %}
+  {% endif %}
+  {% if player_avatar == blank %}
+    {% if profile.avatarfull != blank %}
+      {% assign player_avatar = profile.avatarfull %}
+    {% elsif profile.avatarmedium != blank %}
+      {% assign player_avatar = profile.avatarmedium %}
+    {% elsif profile.avatar != blank %}
+      {% assign player_avatar = profile.avatar %}
+    {% endif %}
+  {% endif %}
+  {% if heatmap_weeks == blank or recent_matches == blank %}
+    {% assign show_error = "Enable Serverless Python (transform.py) in plugin settings and save." %}
+  {% endif %}
+{% endif %}
+
+<style>
+  .heatmap-grid { display: flex; gap: 2px; align-items: flex-start; }
+  .heatmap-week { display: flex; flex-direction: column; gap: 2px; }
+  .heatmap-day {
+    width: 8px;
+    height: 8px;
+    border: 1px solid var(--black);
+    box-sizing: border-box;
+  }
+  .dota-panel--activity,
+  .dota-panel--lists {
+    min-width: 0;
+    overflow: hidden;
+  }
+  .player-header-wrap {
+    width: 100%;
+    max-width: 100%;
+    box-sizing: border-box;
+    margin-bottom: 4px;
+    display: flex;
+    flex-direction: row;
+    justify-content: center;
+    align-items: center;
+  }
+  .flex .group-header--center {
+    align-self: center;
+  }
+  .player-header {
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    justify-content: center;
+    gap: 10px;
+    width: auto;
+    max-width: 100%;
+    box-sizing: border-box;
+  }
+  .dota-avatar {
+    width: 48px;
+    height: 48px;
+    min-width: 48px;
+    flex-shrink: 0;
+    display: block;
+    border: 1px solid var(--black);
+    box-sizing: border-box;
+  }
+  .dota-panel--activity .dota-avatar {
+    width: 56px;
+    height: 56px;
+    min-width: 56px;
+  }
+  .quadrant-activity .dota-avatar {
+    margin: 4px 6px 4px 4px;
+  }
+  .screen--dark-mode .dota-avatar {
+    border-color: var(--gray-45);
+  }
+  .player-header__text {
+    flex: 0 1 auto;
+    min-width: 0;
+    max-width: 100%;
+    overflow: hidden;
+    text-align: left;
+  }
+  .player-header__text .title--small {
+    display: block;
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+  }
+  .player-header__text .label {
+    display: block;
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+  }
+  .heatmap-grid--compact { gap: 2px; }
+  .heatmap-grid--compact .heatmap-week { gap: 2px; }
+  .heatmap-grid--compact .heatmap-day {
+    width: 8px;
+    height: 8px;
+  }
+  .heatmap-grid--full { gap: 2px; }
+  .heatmap-grid--full .heatmap-week { gap: 2px; }
+  .heatmap-grid--full .heatmap-day {
+    width: 12px;
+    height: 12px;
+  }
+  /* Heat levels: light = darker fill for more matches */
+  .heat-0 { background: var(--white); }
+  .heat-1 { background: var(--gray-75); }
+  .heat-2 { background: var(--gray-70); }
+  .heat-3 { background: var(--gray-65); }
+  .heat-4 { background: var(--gray-60); }
+  .heat-5 { background: var(--gray-55); }
+  .heat-6 { background: var(--gray-45); }
+  .heat-7 { background: var(--gray-30); }
+  .heat-8 { background: var(--gray-10); }
+
+  .screen--dark-mode .heatmap-day {
+    border-color: var(--gray-45);
+  }
+  /* Dark mode: screen inverts — lighter grays = busier days */
+  .screen--dark-mode .heat-0 { background: var(--gray-15); }
+  .screen--dark-mode .heat-1 { background: var(--gray-20); }
+  .screen--dark-mode .heat-2 { background: var(--gray-25); }
+  .screen--dark-mode .heat-3 { background: var(--gray-30); }
+  .screen--dark-mode .heat-4 { background: var(--gray-40); }
+  .screen--dark-mode .heat-5 { background: var(--gray-50); }
+  .screen--dark-mode .heat-6 { background: var(--gray-60); }
+  .screen--dark-mode .heat-7 { background: var(--gray-70); }
+  .screen--dark-mode .heat-8 { background: var(--gray-75); }
+
+  .table--matches {
+    width: 100%;
+    max-width: 100%;
+    table-layout: fixed;
+  }
+  .table--matches tbody tr td {
+    vertical-align: middle;
+    padding: 2px 2px;
+    border-top: none;
+    overflow: hidden;
+  }
+  .table--matches tbody tr td.match-meta-cell,
+  .table--matches-quadrant tbody tr td.match-meta-cell {
+    padding: 0;
+    border: none;
+    vertical-align: stretch;
+    background: var(--gray-10);
+  }
+  .table--matches tbody tr.match-row--loss td.match-meta-cell,
+  .table--matches-quadrant tbody tr.match-row--loss td.match-meta-cell {
+    background: var(--gray-65);
+  }
+  .table--matches tbody tr td.match-meta-cell {
+    width: 11px;
+    min-width: 11px;
+    max-width: 11px;
+    text-align: center;
+    vertical-align: middle;
+  }
+  .match-meta-cell .match-meta-label {
+    display: block;
+    padding: 0;
+    margin: 0;
+    line-height: 1;
+    font-family: var(--label-small-font-family);
+    font-size: 9px;
+    font-weight: 500;
+    letter-spacing: 0;
+  }
+  .table--matches tbody tr.match-row--win td.match-meta-cell .match-meta-label,
+  .table--matches-quadrant tbody tr.match-row--win td.match-meta-cell .match-meta-label {
+    color: var(--white);
+  }
+  .table--matches tbody tr.match-row--loss td.match-meta-cell .match-meta-label,
+  .table--matches-quadrant tbody tr.match-row--loss td.match-meta-cell .match-meta-label {
+    color: var(--black);
+  }
+  /* Dark mode bar tones invert: win = light bar, loss = mid bar */
+  .screen--dark-mode .table--matches tbody tr.match-row--win td.match-meta-cell .match-meta-label,
+  .screen--dark-mode .table--matches-quadrant tbody tr.match-row--win td.match-meta-cell .match-meta-label {
+    color: var(--black);
+  }
+  .screen--dark-mode .table--matches tbody tr.match-row--loss td.match-meta-cell .match-meta-label,
+  .screen--dark-mode .table--matches-quadrant tbody tr.match-row--loss td.match-meta-cell .match-meta-label {
+    color: var(--white);
+  }
+  .table--matches tbody tr td.match-col-icon,
+  .table--matches tbody tr td.match-col-hero {
+    vertical-align: middle;
+  }
+  .table--matches tbody tr td.match-col-icon,
+  .table--matches-quadrant tbody tr td.match-col-icon {
+    padding: 2px 2px 2px 5px;
+    text-align: right;
+    vertical-align: middle;
+  }
+  .table--matches tbody tr td.match-col-hero {
+    padding-left: 4px;
+  }
+  .match-col-icon {
+    width: 24px;
+  }
+  .table--matches tbody tr td.match-col-hero {
+    width: 24%;
+    max-width: 24%;
+  }
+  .table--matches tbody tr td.match-col-detail {
+    width: 17%;
+    max-width: 17%;
+  }
+  .match-col-hero .match-cell {
+    justify-content: center;
+    overflow: hidden;
+  }
+  .match-col-hero .title--xsmall {
+    display: block;
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+    max-width: 100%;
+  }
+  .match-col-detail .match-cell {
+    overflow: hidden;
+  }
+  .match-col-detail .description {
+    display: block;
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+    max-width: 100%;
+  }
+  .match-hero-icon {
+    width: 20px;
+    height: 20px;
+    object-fit: contain;
+    display: inline-block;
+    vertical-align: middle;
+  }
+  .table--matches tbody tr td.match-col-kda {
+    width: 68px;
+    max-width: 68px;
+    padding-right: 1px;
+  }
+  .match-col-kda { width: 68px; }
+  .match-cell {
+    display: flex;
+    flex-direction: column;
+  }
+
+  .kda-block {
+    width: 68px;
+    max-width: 68px;
+  }
+  .kda-nums {
+    display: flex;
+    flex-direction: row;
+    width: 68px;
+    max-width: 68px;
+    margin-bottom: 1px;
+  }
+  .kda-num {
+    flex: 1;
+    text-align: center;
+  }
+  .kda-bar {
+    display: flex;
+    flex-direction: row;
+    width: 68px;
+    max-width: 68px;
+    height: 5px;
+    border: 1px solid var(--black);
+    overflow: hidden;
+  }
+  .kda-seg { height: 100%; min-width: 1px; }
+  .kda-seg--k { background: var(--gray-10); }
+  .kda-seg--d { background: var(--gray-45); }
+  .kda-seg--a { background: var(--gray-70); }
+
+  .screen--dark-mode .table--matches tbody tr td.match-meta-cell,
+  .screen--dark-mode .table--matches-quadrant tbody tr td.match-meta-cell {
+    background: var(--gray-75);
+  }
+  .screen--dark-mode .table--matches tbody tr.match-row--loss td.match-meta-cell,
+  .screen--dark-mode .table--matches-quadrant tbody tr.match-row--loss td.match-meta-cell {
+    background: var(--gray-40);
+  }
+  .screen--dark-mode .kda-bar {
+    border-color: var(--gray-45);
+  }
+  .screen--dark-mode .kda-seg--k { background: var(--gray-75); }
+  .screen--dark-mode .kda-seg--d { background: var(--gray-55); }
+  .screen--dark-mode .kda-seg--a { background: var(--gray-35); }
+
+  .table--heroes {
+    width: 100%;
+  }
+  .table--heroes thead th,
+  .table--heroes tbody tr td {
+    vertical-align: middle;
+    padding: 2px 3px;
+  }
+  .table--heroes .hero-col-icon {
+    width: 22px;
+    padding-right: 2px;
+  }
+  .table--heroes .hero-col-name {
+    white-space: normal;
+    word-break: normal;
+    padding-right: 6px;
+  }
+  .table--heroes .hero-col-last,
+  .table--heroes .hero-col-matches,
+  .table--heroes .hero-col-wr {
+    white-space: nowrap;
+    width: 1%;
+  }
+  .table--heroes .hero-col-last {
+    text-align: left;
+    padding-left: 8px;
+    padding-right: 14px;
+  }
+  .table--heroes .hero-col-matches {
+    text-align: right;
+    padding-left: 14px;
+    padding-right: 14px;
+  }
+  .table--heroes .hero-col-wr {
+    text-align: right;
+    padding-left: 14px;
+    padding-right: 4px;
+  }
+  .hero-cell-icon {
+    width: 18px;
+    height: 18px;
+    object-fit: contain;
+    display: block;
+  }
+
+  .quadrant-activity {
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    justify-content: center;
+    gap: 10px;
+    max-width: 100%;
+    padding: 4px 2px;
+    box-sizing: border-box;
+  }
+  .quadrant-activity .quadrant-heatmap {
+    flex: 0 1 auto;
+    min-width: 0;
+  }
+  .quadrant-heatmap .heatmap-day { width: 10px; height: 10px; }
+  .quadrant-heatmap .heatmap-grid { gap: 2px; }
+  .quadrant-heatmap .heatmap-week { gap: 2px; }
+
+  .table--matches-quadrant {
+    width: 100%;
+    max-width: 100%;
+    table-layout: fixed;
+  }
+  .table--matches-quadrant tbody tr td {
+    vertical-align: middle;
+    padding: 1px 2px;
+    border-top: none;
+    overflow: hidden;
+  }
+  .table--matches-quadrant tbody tr td.match-meta-cell {
+    width: 9px;
+    min-width: 9px;
+    max-width: 9px;
+    text-align: center;
+    vertical-align: middle;
+  }
+  .table--matches-quadrant .match-meta-cell .match-meta-label {
+    font-size: 8px;
+  }
+  .table--matches-quadrant tbody tr td.match-col-icon,
+  .table--matches-quadrant tbody tr td.match-col-hero {
+    vertical-align: middle;
+  }
+  .table--matches-quadrant tbody tr td.match-col-hero {
+    padding-left: 3px;
+  }
+  .table--matches-quadrant .match-col-icon {
+    width: 22px;
+  }
+  .table--matches-quadrant .match-hero-icon {
+    width: 16px;
+    height: 16px;
+  }
+  .table--matches-quadrant .match-col-hero .match-cell {
+    justify-content: center;
+    overflow: hidden;
+  }
+  .table--matches-quadrant .match-col-hero .title--xsmall {
+    display: block;
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+    max-width: 100%;
+  }
+  .table--matches-quadrant tbody tr td.match-col-detail .description {
+    display: block;
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+    max-width: 100%;
+  }
+  .table--matches-quadrant .match-col-kda {
+    width: 58px;
+  }
+  .table--matches-quadrant .kda-block {
+    width: 58px;
+    max-width: 58px;
+  }
+  .table--matches-quadrant .kda-nums {
+    width: 58px;
+  }
+  .table--matches-quadrant .kda-bar {
+    width: 58px;
+    height: 4px;
+  }
+</style>
+
+{% template avatar %}
+{% if src != blank %}
+  <img class="image image--cover image-dither dota-avatar" src="{{ src }}" alt="" />
+{% endif %}
+{% endtemplate %}
+
+{% template heatmap %}
+<div class="heatmap-grid {{ grid_class }}">
+  {% for week in heatmap_weeks limit: week_limit %}
+    <div class="heatmap-week">
+      {% for day in week %}
+        {% if day.in_range %}
+          <div class="heatmap-day heat-{{ day.level }}"></div>
+        {% else %}
+          <div class="heatmap-day heat-0"></div>
+        {% endif %}
+      {% endfor %}
+    </div>
+  {% endfor %}
+</div>
+{% endtemplate %}
+
+{% template title_bar %}
+<div class="title_bar">
+  <img class="image" src="https://trmnl.com/images/plugins/trmnl--render.svg" alt="" />
+  <span class="title">Dota 2</span>
+  <span class="instance">{{ player_name | default: "OpenDota" }}</span>
+</div>
+{% endtemplate %}
+
+{% template player_header %}
+<div class="player-header">
+  {% render "avatar", src: player_avatar %}
+  <div class="player-header__text flex flex--col flex--top flex--left">
+    <span class="title title--small">{{ player_name }}</span>
+    {% if rank_label or wins %}
+    <span class="label">
+      {% if rank_label %}{{ rank_label }}{% endif %}
+      {% if rank_label and wins and losses %} · {% endif %}
+      {% if wins and losses %}{{ wins }}W - {{ losses }}L{% endif %}
+    </span>
+    {% endif %}
+  </div>
+</div>
+{% endtemplate %}
+
+{% template matches_table %}
+{% if variant == "quadrant" %}
+<table class="table table--xsmall table--matches table--matches-quadrant" data-table-limit="true">
+{% else %}
+<table class="table table--xsmall table--matches" data-table-limit="true">
+{% endif %}
+  <tbody>
+    {% for match in matches limit: match_limit %}
+    <tr class="match-row {% if match.won %}match-row--win{% else %}match-row--loss{% endif %}">
+      <td class="match-meta-cell">
+        <span class="match-meta-label">{% if match.won %}W{% else %}L{% endif %}</span>
+      </td>
+      <td class="match-col-icon">
+        {% if match.hero_icon != blank %}
+          <img src="{{ match.hero_icon }}" class="match-hero-icon" alt="" />
+        {% endif %}
+      </td>
+      <td class="match-col-hero">
+        <div class="match-cell">
+          <span class="title title--xsmall">{{ match.hero }}</span>
+        </div>
+      </td>
+      <td class="match-col-detail">
+        <div class="match-cell">
+          <span class="description description--small">{{ match.bracket }}</span>
+          <span class="description description--small">{{ match.when_relative }}</span>
+        </div>
+      </td>
+      <td class="match-col-detail">
+        <div class="match-cell">
+          <span class="description description--small">{{ match.game_mode }}</span>
+          <span class="description description--small">{{ match.rank_at_match }}</span>
+        </div>
+      </td>
+      <td class="match-col-detail">
+        <div class="match-cell">
+          <span class="description description--small">{{ match.duration }}</span>
+          <span class="description description--small">{{ match.team }}</span>
+        </div>
+      </td>
+      <td class="match-col-kda">
+        <div class="kda-block">
+          <div class="kda-nums">
+            <span class="description description--small kda-num">{{ match.kills }}</span>
+            <span class="description description--small kda-num">{{ match.deaths }}</span>
+            <span class="description description--small kda-num">{{ match.assists }}</span>
+          </div>
+          <div class="kda-bar">
+            <div class="kda-seg kda-seg--k" style="width: {{ match.k_pct }}%;"></div>
+            <div class="kda-seg kda-seg--d" style="width: {{ match.d_pct }}%;"></div>
+            <div class="kda-seg kda-seg--a" style="width: {{ match.a_pct }}%;"></div>
+          </div>
+        </div>
+      </td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% endtemplate %}
+
+{% template heroes_table %}
+<table class="table table--xsmall table--heroes" data-table-limit="true">
+  <thead>
+    <tr>
+      <th class="hero-col-icon"></th>
+      <th class="hero-col-name"><span class="label label--small">Hero</span></th>
+      <th class="hero-col-last"><span class="label label--small">Last</span></th>
+      <th class="hero-col-matches"><span class="label label--small">Matches</span></th>
+      <th class="hero-col-wr"><span class="label label--small">WR</span></th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for hero in heroes limit: hero_limit %}
+    <tr>
+      <td class="hero-col-icon">
+        {% if hero.hero_icon != blank %}
+          <img src="{{ hero.hero_icon }}" class="hero-cell-icon" alt="" />
+        {% endif %}
+      </td>
+      <td class="hero-col-name">
+        <span class="description">{{ hero.name }}</span>
+      </td>
+      <td class="hero-col-last">
+        <span class="label label--small">{{ hero.last_played }}</span>
+      </td>
+      <td class="hero-col-matches"><span class="label">{{ hero.matches }}</span></td>
+      <td class="hero-col-wr"><span class="label">{{ hero.winrate }}%</span></td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% endtemplate %}

@@ -1,0 +1,27 @@
+
+{% if show_error %}
+<div class="content content--center">
+  <span class="title title--small">Setup needed</span>
+  <p class="description">{{ show_error }}</p>
+</div>
+{% else %}
+<div class="layout layout--row layout--center-y layout--left">
+  <div class="flex flex--col flex--top flex--center-x dota-panel--activity stretch-x">
+    <div class="player-header-wrap">
+      {% render "player_header", player_name: player_name, player_avatar: player_avatar, rank_label: rank_label, wins: wins, losses: losses %}
+    </div>
+    <span class="label label--underline">Activity</span>
+    {% render "heatmap", heatmap_weeks: heatmap_weeks, grid_class: "heatmap-grid--full", week_limit: 26 %}
+  </div>
+
+  <div class="flex flex--col flex--top flex--left dota-panel--lists stretch-x">
+    <span class="label label--underline group-header group-header--center">Latest matches</span>
+    {% render "matches_table", matches: recent_matches, match_limit: 10 %}
+
+    <span class="label label--underline group-header group-header--center">Heroes played</span>
+    {% render "heroes_table", heroes: top_heroes, hero_limit: 5 %}
+  </div>
+</div>
+{% endif %}
+
+{% render "title_bar", player_name: player_name %}

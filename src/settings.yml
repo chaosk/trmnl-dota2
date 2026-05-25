@@ -1,0 +1,21 @@
+---
+strategy: polling
+no_screen_padding: 'no'
+dark_mode: 'no'
+static_data: 
+polling_verb: get
+framework_version: latest
+serverless_language: python
+polling_url: https://api.opendota.com/api/players/{{ account_id }}
+polling_headers: ''
+polling_body: ''
+id: 314841
+custom_fields:
+- keyname: account_id
+  field_type: string
+  name: OpenDota Account ID
+  description: Your Dota 2 account ID (not Steam ID64).
+  placeholder: '70388657'
+  help_text: Find it on <a href="https://www.opendota.com/" class="underline">OpenDota</a> — open your profile; the number in the URL is your account ID.
+name: Dota 2 Stats
+refresh_interval: 30

@@ -1,0 +1,18 @@
+
+{% if show_error %}
+  <span class="description">{{ show_error }}</span>
+{% else %}
+<div class="layout layout--col layout--center-y layout--center-x">
+  <div class="flex flex--col flex--top flex--center-x stretch-x">
+    <div class="quadrant-activity">
+      {% render "avatar", src: player_avatar %}
+      {% render "heatmap", heatmap_weeks: heatmap_weeks, grid_class: "quadrant-heatmap", week_limit: 26 %}
+    </div>
+
+    <span class="label label--underline group-header group-header--center">Latest matches</span>
+    {% render "matches_table", matches: recent_matches, match_limit: 5, variant: "quadrant" %}
+  </div>
+</div>
+{% endif %}
+
+{% render "title_bar", player_name: player_name %}

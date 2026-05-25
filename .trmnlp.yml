@@ -1,0 +1,11 @@
+---
+watch:
+  - src
+  - .trmnlp.yml
+
+custom_fields:
+  account_id: "70388657"
+
+transform_runtime: enabled
+
+framework_version: latest
